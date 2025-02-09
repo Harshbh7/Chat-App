@@ -5,7 +5,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   define: {
-    'process.env': {}
+    'process.env': {},
+    "process.env.NODE_ENV": JSON.stringify("development"),
   }, 
-  base: '/Chat-App/',
+  base: 'https://harshbh7.github.io/Chat-App/',
 });
