@@ -17,10 +17,12 @@ import {
   DialogTitle,
 } from "@mui/material";
 import Picker from '@emoji-mart/react';
+
+import { format, isToday, isYesterday } from "date-fns";
 import data from '@emoji-mart/data';
 import { auth, database } from "../firebase";
 import { signOut } from "firebase/auth";
-import { ref, onValue, push } from "firebase/database";
+import { ref, onValue, push, update, remove } from "firebase/database";
 import { generateChatId } from "../utils/generateChatId";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import ShareIcon from "@mui/icons-material/Share";
@@ -33,6 +35,10 @@ import { Worker, Viewer } from "@react-pdf-viewer/core";
 import '@react-pdf-viewer/core/lib/styles/index.css';
 import PersonIcon from "@mui/icons-material/Person";
 import Avatar from "@mui/material/Avatar";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import EditIcon from "@mui/icons-material/Edit";
+import DeleteIcon from "@mui/icons-material/Delete";
+import { Menu, MenuItem } from "@mui/material";
 
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
@@ -49,6 +55,54 @@ const Chat = ({ user, students }) => {
   const fileInputRef = useRef();
   const messagesEndRef = useRef(null);
   const [isEmojiPickerOpen, setEmojiPickerOpen] = useState(false);
+
+  // Function to copy message to clipboard
+const handleCopyMessage = (message) => {
+  navigator.clipboard.writeText(message.content).then(() => {
+    alert("Message copied!");
+  });
+};
+
+// Function to delete a message
+const handleDeleteMessage = async () => {
+  if (!editingMessage) return;
+  const chatId = generateChatId(user.uid, currentRecipient.id);
+  const messageRef = ref(database, `messages/${chatId}/${editingMessage.id}`);
+
+  try {
+    await remove(messageRef);
+    setEditingMessage(null);
+    setContextMenu(null);
+  } catch (error) {
+    console.error("Error deleting message:", error);
+  }
+};
+
+  const groupMessagesByDate = (messages) => {
+    const grouped = {};
+    messages.forEach((msg) => {
+      const messageDate = new Date(msg.timestamp);
+      let dateKey = format(messageDate, "yyyy-MM-dd");
+  
+      if (isToday(messageDate)) {
+        dateKey = "Today";
+      } else if (isYesterday(messageDate)) {
+        dateKey = "Yesterday";
+      } else {
+        dateKey = format(messageDate, "MMMM dd, yyyy"); // Example: February 10, 2025
+      }
+  
+      if (!grouped[dateKey]) {
+        grouped[dateKey] = [];
+      }
+      grouped[dateKey].push(msg);
+    });
+  
+    return grouped;
+  };
+  
+  const groupedMessages = groupMessagesByDate(messages);
+  
 
   useEffect(() => {
     if (currentRecipient) {
@@ -228,143 +282,94 @@ const Chat = ({ user, students }) => {
                   borderRadius: 2,
                 }}
               >
-                {messages.map((msg) => (
-                  <Box
-                    key={msg.id}
-                    sx={{
-                      display: "flex",
-                      justifyContent:
-                        msg.sender === user.uid ? "flex-end" : "flex-start",
-                      mb: 1,
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        bgcolor: msg.sender === user.uid ? "#1976d2" : "#f1f1f1",
-                        color: msg.sender === user.uid ? "#fff" : "#000",
-                        p: 1,
-                        borderRadius: 2,
-                      }}
-                    >
-                      {msg.content}
-                      {msg.file && (
+                {Object.entries(groupedMessages).map(([date, msgs]) => (
+                  <Box key={date}>
+                    <Typography variant="subtitle2" sx={{ textAlign: "center", my: 1, color: "gray" }}>
+                      {date}
+                    </Typography>
+                    {msgs.map((msg) => (
+                      <Box
+                        key={msg.id}
+                        sx={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: msg.sender === user.uid ? "flex-end" : "flex-start",
+                          mb: 1,
+                        }}
+                      >
+                        <Box
+                          sx={{
+                            bgcolor: msg.sender === user.uid ? "#1976d2" : "#f1f1f1",
+                            color: msg.sender === user.uid ? "#fff" : "#000",
+                            p: 1,
+                            borderRadius: 2,
+                            maxWidth: "60%",
+                          }}
+                        >
+                          {msg.content}
+                          {msg.file && (
                         <a href={msg.file} download>
                           {msg.fileType === "image" && (
-                            <Tooltip title="Share" arrow>
-                              <div style={{ position: "relative", display: "inline-block" }}>
-                                <img
-                                  src={msg.file}
-                                  alt="File"
-                                  style={{
-                                    width: "200px",
-                                    marginTop: "10px",
-                                    borderRadius: "5px",
-                                    cursor: "pointer",
-                                  }}
-                                />
-                                <IconButton
-                                  style={{
-                                    position: "absolute",
-                                    top: "10px",
-                                    right: "10px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.5)",
-                                    color: "#fff",
-                                    borderRadius: "50%",
-                                  }}
-                                  onClick={() => alert("Share image")}
-                                >
-                                  <ShareIcon />
-                                </IconButton>
-                              </div>
-                            </Tooltip>
+                            <img
+                              src={msg.file}
+                              alt="File"
+                              style={{
+                                width: "200px",
+                                marginTop: "10px",
+                                borderRadius: "5px",
+                                cursor: "pointer",
+                              }}
+                            />
                           )}
-                          {msg.fileType === "audio" && (
-                            <Tooltip title="Share" arrow>
-                              <div style={{ position: "relative", display: "inline-block" }}>
-                                <audio controls style={{ marginTop: "10px" }}>
-                                  <source src={msg.file} />
-                                </audio>
-                                <IconButton
-                                  style={{
-                                    position: "absolute",
-                                    top: "10px",
-                                    right: "10px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.5)",
-                                    color: "#fff",
-                                    borderRadius: "50%",
-                                  }}
-                                  onClick={() => alert("Share audio")}
-                                >
-                                  <ShareIcon />
-                                </IconButton>
-                              </div>
-                            </Tooltip>
-                          )}
-                          {msg.fileType === "video" && (
-                            <Tooltip title="Share" arrow>
-                              <div style={{ position: "relative", display: "inline-block" }}>
-                                <video
-                                  controls
-                                  style={{
-                                    width: "200px",
-                                    marginTop: "10px",
-                                    borderRadius: "5px",
-                                  }}
-                                >
-                                  <source src={msg.file} />
-                                </video>
-                                <IconButton
-                                  style={{
-                                    position: "absolute",
-                                    top: "10px",
-                                    right: "10px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.5)",
-                                    color: "#fff",
-                                    borderRadius: "50%",
-                                  }}
-                                  onClick={() => alert("Share video")}
-                                >
-                                  <ShareIcon />
-                                </IconButton>
-                              </div>
-                            </Tooltip>
-                          )}
-                          {msg.fileType === "document" && (
-                            <Tooltip title="Share" arrow>
-                              <div style={{ position: "relative", display: "inline-block" }}>
-                                <div
-                                  style={{
-                                    padding: "10px",
-                                    backgroundColor: "#f1f1f1",
-                                    borderRadius: "5px",
-                                  }}
-                                >
-                                  <InsertDriveFileIcon />
-                                  Document
-                                </div>
-                                <IconButton
-                                  style={{
-                                    position: "absolute",
-                                    top: "10px",
-                                    right: "10px",
-                                    backgroundColor: "rgba(0, 0, 0, 0.5)",
-                                    color: "#fff",
-                                    borderRadius: "50%",
-                                  }}
-                                  onClick={() => alert("Share document")}
-                                >
-                                  <ShareIcon />
-                                </IconButton>
-                              </div>
-                            </Tooltip>
-                          )}
-                        </a>
-                      )}
-                    </Box>
+                            {msg.fileType === "audio" && (
+                              <audio controls style={{ marginTop: "10px" }}>
+                                <source src={msg.file} />
+                              </audio>
+                            )}
+                            {msg.fileType === "video" && (
+                              <video
+                                controls
+                                style={{
+                                  width: "200px",
+                                  marginTop: "10px",
+                                  borderRadius: "5px",
+                                }}
+                              >
+                                <source src={msg.file} />
+                              </video>
+                            )}
+                            {msg.fileType === "document" && (
+                              <Box
+                                sx={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  mt: 1,
+                                  p: 1,
+                                  bgcolor: "#fff",
+                                  borderRadius: "5px",
+                                  border: "1px solid #ddd",
+                                }}
+                              >
+                                <InsertDriveFileIcon sx={{ mr: 1 }} />
+                                Document
+                              </Box>
+                            )}
+                          </a>
+                        )}
+                          <Typography variant="caption" sx={{ display: "block", textAlign: "right", mt: 1, color: "gray" }}>
+                            {new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </Typography>
+                        </Box>
+                      </Box>
+                    ))}
                   </Box>
+                  
                 ))}
                 <div ref={messagesEndRef}></div>
               </Box>
+
+                
+              
 
               <Box display="flex" alignItems="center">
                 <input
@@ -448,9 +453,11 @@ const Chat = ({ user, students }) => {
                 multiple
                 onChange={handleFileChange}
               />
-
+            
 
             </>
+
+            
           ) : (
             <Typography variant="h6">Select a student to chat with</Typography>
           )}
